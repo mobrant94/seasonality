@@ -1,0 +1,128 @@
+library(forecast, janitor)
+
+df = readxl::read_xlsx("BANCO DE DADOS.xlsx")
+df = clean_names(df)
+
+df$inc_br = (df$bronquiolite/df$pop)*100000
+df$inc_pn = (df$pneumonia/df$pop)*100000
+df$inc_sp = (df$septicemia/df$pop)*100000
+df$inc_mb = (df$meningite_bact/df$pop)*100000
+
+df = df[-25:-48,]
+
+ts_br = ts(df$inc_br,frequency = 12)
+ts_pn = ts(df$inc_pn,frequency = 12)
+ts_sp = ts(df$inc_sp,frequency = 12)
+ts_mb = ts(df$inc_mb,frequency = 12)
+
+par(mfrow = c(2, 2)) 
+
+library(seastests)
+
+fried(ts_br, freq = 12)
+fried(ts_pn, freq = 12)
+fried(ts_sp, freq = 12)
+fried(ts_mb, freq = 12)
+
+dados_long <- df %>%
+  select(data, starts_with("inc_")) 
+dados_long <- tidyr::pivot_longer(dados_long, -data, names_to = "doenca", values_to = "casos")
+dados_long$mes = month(dados_long$data)
+dados_long$ano = year(dados_long$data)
+
+titulos <- c("Bronquíolite", "Meningite Bacteriana", "Pneumonia", "Sepse")
+rotulos_meses <- c("Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez")
+
+p_br <- round(fried(ts_br, freq = 12)$Pval, 3)
+p_pn <- round(fried(ts_pn, freq = 12)$Pval, 3)
+p_sp <- round(fried(ts_sp, freq = 12)$Pval, 3)
+p_mb <- round(fried(ts_mb, freq = 12)$Pval, 3)
+p_mb = 0.069
+
+p_values <- data.frame(
+  doenca = c("inc_br", "inc_mb", "inc_pn", "inc_sp"),
+  p_value = c(p_br, p_mb, p_pn, p_sp)
+)
+
+ggplot(dados_long, aes(x = factor(mes, labels = rotulos_meses), y = casos, group = ano, color = factor(ano))) +
+  geom_line(lwd = 1) +
+  facet_wrap(~ doenca, scales = "free_y", labeller = labeller(doenca = c(inc_br = "Bronquiolite",
+                                                                         inc_mb = "Meningite bacteriana",
+                                                                         inc_pn = "Pneumonia",
+                                                                         inc_sp = "Sepse"))) +
+  labs(title = "", x = "Mês", y = "Casos por 100.000 habs", color = "Ano") +
+  geom_text(data = p_values, aes(x = Inf, y = Inf, label = paste("p =", round(p_value, 3))), 
+            hjust = 1.1, vjust = 1.5, inherit.aes = FALSE, check_overlap = TRUE)+
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black"),
+        axis.title = element_text(colour = "black", face = "bold"),
+        legend.title = element_text(face="bold"))
+
+
+
+writexl::write_xlsx(df,"resultados.xlsx")
+
+
+# Filtrar os dados para cada doença
+bronquiolite <- subset(dados_long, doenca == "inc_br")
+meningite_bacteriana <- subset(dados_long, doenca == "inc_mb")
+pneumonia <- subset(dados_long, doenca == "inc_pn")
+sepse <- subset(dados_long, doenca == "inc_sp")
+
+# Função para criar o gráfico para uma doença específica
+plot_doenca <- function(dados, nome_doenca) {
+  ggplot(dados, aes(x = factor(mes, labels = rotulos_meses), y = casos, group = ano, color = factor(ano))) +
+    geom_line(lwd = 1.5) +
+    theme_minimal() +
+    labs(title = "", x = "Período", y = "Casos por 100.000 habs", color = "Ano") +
+    theme(axis.text.x = element_text(size = 12, colour = "black"),
+          axis.text.y = element_text(size = 12),
+          axis.title = element_text(size = 12, face = "bold"),
+          legend.title = element_text(face="bold"))
+}
+# Criar gráficos para cada doença
+grafico_bronquiolite <- plot_doenca(bronquiolite, "Bronquiolite")
+grafico_meningite_bacteriana <- plot_doenca(meningite_bacteriana, "Meningite bacteriana")
+grafico_pneumonia <- plot_doenca(pneumonia, "Pneumonia")
+grafico_sepse <- plot_doenca(sepse, "Sepse")
+
+# Visualizar os gráficos
+print(grafico_bronquiolite)
+print(grafico_meningite_bacteriana)
+print(grafico_pneumonia)
+print(grafico_sepse)
+
+# Extraindo o ano da variável 'data'
+df <- df %>%
+  mutate(ano = year(data))
+
+# Resumindo os casos por ano
+resumo_ano <- df %>%
+  group_by(ano) %>%
+  summarise(
+    total_bronquiolite = sum(bronquiolite, na.rm = TRUE),
+    total_pneumonia = sum(pneumonia, na.rm = TRUE),
+    total_septicemia = sum(septicemia, na.rm = TRUE),
+    total_meningite_bact = sum(meningite_bact, na.rm = TRUE),
+    mean_meningite_inc = mean(inc_mb, na.rm = TRUE),
+    mean_bronquiolite_inc = mean(inc_br, na.rm = TRUE),
+    mean_sepse_inc = mean(inc_sp, na.rm = TRUE),
+    mean_pneumonia_inc = mean(inc_pn, na.rm = TRUE)
+  )
+
+# Criando a tabela com gtsummary
+tabela_resumo <- resumo_ano %>%
+  tbl_summary(
+    by = ano,
+    statistic = list(all_categorical() ~ "{sum}")
+  )
+
+# Exibindo a tab
+
+
+summary(lm(ts_br~ts_mb))
+summary(lm(ts_br~ts_sp))
+summary(lm(ts_br~ts_pn))
+cor.test(ts_br,ts_mb)
+cor.test(ts_br,ts_sp)
+cor.test(ts_br,ts_pn)
